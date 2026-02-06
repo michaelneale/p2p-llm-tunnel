@@ -69,6 +69,13 @@ pub struct SignalingClient {
     pub recv_rx: mpsc::UnboundedReceiver<IncomingSignal>,
 }
 
+impl Drop for SignalingClient {
+    fn drop(&mut self) {
+        // Send bye message to cleanly leave the room
+        let _ = self.send_tx.send(OutgoingSignal::Bye);
+    }
+}
+
 impl SignalingClient {
     pub async fn connect(signal_url: &str, room: &str) -> Result<Self> {
         info!("connecting to signaling server: {}", signal_url);

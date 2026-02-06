@@ -158,6 +158,7 @@ wss.on("connection", (ws) => {
         }
     });
     ws.on("close", () => {
+        console.log(`[signal] ws closed for peer ${peerId}`);
         if (peerId) {
             removePeer(peerId);
         }
