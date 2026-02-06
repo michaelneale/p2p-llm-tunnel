@@ -5,6 +5,8 @@ A peer-to-peer HTTP tunneling solution that allows serving HTTP APIs (like OpenA
 1. **Signal Server** (TypeScript) — Tiny WebSocket rendezvous server for WebRTC signaling
 2. **Tunnel Client** (Rust) — Single binary with `serve` and `proxy` modes
 
+**Public signal server:** `wss://signal-server.fly.dev` (default)
+
 ## Architecture
 
 ```
@@ -21,7 +23,7 @@ A peer-to-peer HTTP tunneling solution that allows serving HTTP APIs (like OpenA
 
          ┌──────────────┐
          │Signal Server │
-         │  ws://:8787  │
+         │ fly.dev:443  │
          └──────────────┘
          (only for initial
           handshake)
@@ -31,60 +33,44 @@ A peer-to-peer HTTP tunneling solution that allows serving HTTP APIs (like OpenA
 
 ### Prerequisites
 
-- Node.js 18+
 - Rust 1.70+
 
-### 1. Build Everything
+### 1. Build the Tunnel
 
 ```bash
-# Signal server
-cd signal-server
-npm install
-npm run build
-cd ..
-
-# Tunnel client
 cd tunnel
-cargo build
-cd ..
+cargo build --release
 ```
 
-### 2. Start the Signal Server
+### 2. Start the Provider (on the machine with the API)
 
 ```bash
-cd signal-server
-node dist/index.js --port 8787
-# => ws://0.0.0.0:8787
+# Example: expose local Ollama instance
+./tunnel/target/release/tunnel serve \
+  --room my-secret-room \
+  --upstream http://127.0.0.1:11434
 ```
 
-### 3. Start the Provider (on the machine with the API)
+### 3. Start the Consumer (on your laptop)
 
 ```bash
-# Assuming your LLM API is running on http://127.0.0.1:3001
-./tunnel/target/debug/tunnel serve \
-  --signal ws://your-host:8787 \
-  --room my-api \
-  --upstream http://127.0.0.1:3001
-```
-
-### 4. Start the Consumer (on your laptop)
-
-```bash
-./tunnel/target/debug/tunnel proxy \
-  --signal ws://your-host:8787 \
-  --room my-api \
+./tunnel/target/release/tunnel proxy \
+  --room my-secret-room \
   --listen 127.0.0.1:8000
 ```
 
-### 5. Use It
+### 4. Use It
 
 ```bash
 # Now your tools can talk to the remote API as if it's local:
-curl http://127.0.0.1:8000/v1/models
+curl http://127.0.0.1:8000/api/tags
 
-# Or set the base URL for OpenAI-compatible tools:
+# For OpenAI-compatible endpoints:
+curl http://127.0.0.1:8000/v1/models
 export OPENAI_BASE_URL=http://127.0.0.1:8000
 ```
+
+> **Note:** The `--signal` flag defaults to `wss://signal-server.fly.dev`. You only need to specify it if running your own signal server.
 
 ## CLI Reference
 
@@ -92,24 +78,24 @@ export OPENAI_BASE_URL=http://127.0.0.1:8000
 
 Exposes an upstream HTTP service through the tunnel.
 
-| Flag | Env Var | Description |
-|------|---------|-------------|
-| `--signal` | `TUNNEL_SIGNAL` | WebSocket URL of signaling server |
-| `--room` | `TUNNEL_ROOM` | Room name for peer discovery |
-| `--upstream` | `TUNNEL_UPSTREAM` | Upstream HTTP URL to forward to |
-| `--advertise` | — | Path prefix to advertise (default: `/`) |
+| Flag | Env Var | Default | Description |
+|------|---------|---------|-------------|
+| `--signal` | `TUNNEL_SIGNAL` | `wss://signal-server.fly.dev` | WebSocket URL of signaling server |
+| `--room` | `TUNNEL_ROOM` | (required) | Room name for peer discovery |
+| `--upstream` | `TUNNEL_UPSTREAM` | (required) | Upstream HTTP URL to forward to |
+| `--advertise` | — | `/` | Path prefix to advertise |
 
 ### `tunnel proxy`
 
 Creates a local HTTP proxy that tunnels to the remote provider.
 
-| Flag | Env Var | Description |
-|------|---------|-------------|
-| `--signal` | `TUNNEL_SIGNAL` | WebSocket URL of signaling server |
-| `--room` | `TUNNEL_ROOM` | Room name for peer discovery |
-| `--listen` | `TUNNEL_LISTEN` | Local address to listen on (default: `127.0.0.1:8000`) |
+| Flag | Env Var | Default | Description |
+|------|---------|---------|-------------|
+| `--signal` | `TUNNEL_SIGNAL` | `wss://signal-server.fly.dev` | WebSocket URL of signaling server |
+| `--room` | `TUNNEL_ROOM` | (required) | Room name for peer discovery |
+| `--listen` | `TUNNEL_LISTEN` | `127.0.0.1:8000` | Local address to listen on |
 
-### `signal-server`
+### `signal-server` (self-hosted)
 
 | Flag | Description |
 |------|-------------|
@@ -138,6 +124,23 @@ Multiple requests are multiplexed over a single data channel using stream IDs.
 6. HTTP requests from the proxy are framed and sent through the data channel
 7. The provider forwards them to the upstream server and streams responses back
 
+## Self-Hosting the Signal Server
+
+The signal server is deployed at `wss://signal-server.fly.dev` and free to use. To run your own:
+
+```bash
+cd signal-server
+npm install && npm run build
+node dist/index.js --port 8787
+```
+
+Or deploy to Fly.io:
+```bash
+cd signal-server
+fly launch
+fly deploy
+```
+
 ## Development
 
 ### Running the Local Test
@@ -154,7 +157,7 @@ This starts all components locally and verifies end-to-end tunneling.
 Set `RUST_LOG` for detailed output:
 
 ```bash
-RUST_LOG=debug ./tunnel/target/debug/tunnel serve ...
+RUST_LOG=debug ./tunnel/target/release/tunnel serve ...
 ```
 
 ## Networking Notes

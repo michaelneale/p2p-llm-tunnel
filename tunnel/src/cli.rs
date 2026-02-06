@@ -12,7 +12,7 @@ pub enum Command {
     /// Serve an upstream HTTP service through the tunnel
     Serve {
         /// WebSocket URL of the signaling server
-        #[arg(long, env = "TUNNEL_SIGNAL")]
+        #[arg(long, env = "TUNNEL_SIGNAL", default_value = "wss://signal-server.fly.dev")]
         signal: String,
 
         /// Room name to join
@@ -43,7 +43,7 @@ pub enum Command {
     /// Create a local HTTP proxy that tunnels to a remote provider
     Proxy {
         /// WebSocket URL of the signaling server
-        #[arg(long, env = "TUNNEL_SIGNAL")]
+        #[arg(long, env = "TUNNEL_SIGNAL", default_value = "wss://signal-server.fly.dev")]
         signal: String,
 
         /// Room name to join
