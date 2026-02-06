@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 
 #[derive(Parser, Debug)]
-#[command(name = "tunnel", about = "P2P HTTP tunnel over WebRTC")]
+#[command(name = "tunnel", version, about = "P2P HTTP tunnel over WebRTC")]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Command,

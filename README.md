@@ -15,6 +15,16 @@ Or build from source (requires Rust 1.70+):
 cd tunnel && cargo build --release
 ```
 
+### Updating
+
+```bash
+# Check current version
+tunnel --version
+
+# Update to latest
+curl -L https://github.com/michaelneale/p2p-llm-tunnel/releases/latest/download/tunnel-darwin-arm64.gz | gunzip > tunnel && chmod +x tunnel
+```
+
 ## Quick Start
 
 **On the machine with your API** (e.g., home server running Ollama):
