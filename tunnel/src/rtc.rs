@@ -24,6 +24,7 @@ pub struct DataChannelPair {
     pub dc: Arc<RTCDataChannel>,
     pub incoming_rx: mpsc::UnboundedReceiver<Bytes>,
     pub connected: Arc<Notify>,
+    pub disconnected: Arc<Notify>,
 }
 
 /// Create a WebRTC peer connection with STUN (and optionally TURN)
@@ -266,6 +267,7 @@ pub async fn establish_as_offerer(
             dc,
             incoming_rx,
             connected,
+            disconnected: pc_failed,
         },
     ))
 }
@@ -452,6 +454,7 @@ pub async fn establish_as_answerer(
             dc,
             incoming_rx,
             connected,
+            disconnected: pc_failed,
         },
     ))
 }

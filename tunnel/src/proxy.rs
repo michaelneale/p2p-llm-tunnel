@@ -45,6 +45,7 @@ pub async fn run_proxy(
         dc,
         mut incoming_rx,
         connected,
+        disconnected,
     } = dc_pair;
 
     let tunnel_ready = Arc::new(AtomicBool::new(false));
@@ -176,36 +177,46 @@ pub async fn run_proxy(
     info!("proxy listening on http://{}", addr);
 
     loop {
-        let (stream, remote_addr) = listener.accept().await?;
-        let io = hyper_util::rt::TokioIo::new(stream);
+        tokio::select! {
+            // Watch for WebRTC connection failure
+            _ = disconnected.notified() => {
+                warn!("WebRTC connection failed, exiting proxy to trigger reconnect");
+                return Err(anyhow::anyhow!("WebRTC connection failed"));
+            }
+            // Accept new HTTP connections
+            accept_result = listener.accept() => {
+                let (stream, remote_addr) = accept_result?;
+                let io = hyper_util::rt::TokioIo::new(stream);
 
-        let dc = dc.clone();
-        let tunnel_ready = tunnel_ready.clone();
-        let stream_counter = stream_counter.clone();
-        let pending = pending.clone();
-
-        tokio::spawn(async move {
-            let dc = dc.clone();
-            let tunnel_ready = tunnel_ready.clone();
-            let stream_counter = stream_counter.clone();
-            let pending = pending.clone();
-
-            let service = service_fn(move |req: Request<Incoming>| {
                 let dc = dc.clone();
                 let tunnel_ready = tunnel_ready.clone();
                 let stream_counter = stream_counter.clone();
                 let pending = pending.clone();
-                async move {
-                    handle_proxy_request(req, dc, tunnel_ready, stream_counter, pending).await
-                }
-            });
 
-            if let Err(e) = http1::Builder::new().serve_connection(io, service).await {
-                if !e.to_string().contains("connection closed") {
-                    error!("HTTP connection error from {}: {}", remote_addr, e);
-                }
+                tokio::spawn(async move {
+                    let dc = dc.clone();
+                    let tunnel_ready = tunnel_ready.clone();
+                    let stream_counter = stream_counter.clone();
+                    let pending = pending.clone();
+
+                    let service = service_fn(move |req: Request<Incoming>| {
+                        let dc = dc.clone();
+                        let tunnel_ready = tunnel_ready.clone();
+                        let stream_counter = stream_counter.clone();
+                        let pending = pending.clone();
+                        async move {
+                            handle_proxy_request(req, dc, tunnel_ready, stream_counter, pending).await
+                        }
+                    });
+
+                    if let Err(e) = http1::Builder::new().serve_connection(io, service).await {
+                        if !e.to_string().contains("connection closed") {
+                            error!("HTTP connection error from {}: {}", remote_addr, e);
+                        }
+                    }
+                });
             }
-        });
+        }
     }
 }
 

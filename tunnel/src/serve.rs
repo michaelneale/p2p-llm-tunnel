@@ -20,6 +20,7 @@ pub async fn run_serve(
         dc,
         mut incoming_rx,
         connected,
+        disconnected,
     } = dc_pair;
 
     // Wait for connection
@@ -78,7 +79,27 @@ pub async fn run_serve(
         }
     });
 
-    while let Some(raw) = incoming_rx.recv().await {
+    loop {
+        let raw = tokio::select! {
+            // Watch for WebRTC connection failure
+            _ = disconnected.notified() => {
+                warn!("WebRTC connection failed, exiting serve to trigger reconnect");
+                ping_task.abort();
+                return Err(anyhow::anyhow!("WebRTC connection failed"));
+            }
+            // Receive tunnel messages
+            msg = incoming_rx.recv() => {
+                match msg {
+                    Some(data) => data,
+                    None => {
+                        info!("data channel closed, serve ending");
+                        ping_task.abort();
+                        return Err(anyhow::anyhow!("data channel closed"));
+                    }
+                }
+            }
+        };
+
         let msg = match TunnelMessage::decode(raw) {
             Ok(m) => m,
             Err(e) => {
@@ -133,10 +154,6 @@ pub async fn run_serve(
             }
         }
     }
-
-    ping_task.abort();
-    info!("data channel closed, serve ending");
-    Ok(())
 }
 
 /// Build the upstream URL by stripping the advertise prefix from the request path.
