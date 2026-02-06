@@ -128,6 +128,25 @@ Then use `--signal ws://your-server:8787` on both sides.
 
 ## Development
 
+### Commands (using [just](https://github.com/casey/just))
+
+```bash
+just build          # Build tunnel + signal server
+just test           # Integration test (public signal server)
+just test-local     # Integration test (local signal server)
+just test-unit      # Run unit tests
+
+# Run tunnel directly
+just serve room=myroom upstream=http://localhost:11434
+just proxy room=myroom
+just proxy room=myroom listen=127.0.0.1:9000
+
+# Signal server management
+just signal         # Run local signal server
+just deploy-signal  # Deploy to Fly.io
+just signal-logs    # View Fly.io logs
+```
+
 ### Project Structure
 
 ```
