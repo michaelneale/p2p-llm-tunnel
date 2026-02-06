@@ -116,7 +116,15 @@ where
     let mut attempt = 0u32;
 
     loop {
-        match make_future().await {
+        let result = tokio::select! {
+            r = make_future() => r,
+            _ = tokio::signal::ctrl_c() => {
+                info!("received Ctrl+C, exiting");
+                return Err(anyhow::anyhow!("interrupted by user"));
+            }
+        };
+
+        match result {
             Ok(()) => {
                 info!("{} completed normally", mode);
                 return Ok(());
