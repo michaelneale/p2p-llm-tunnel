@@ -67,12 +67,13 @@ pub async fn run_proxy(
     info!("sent HELLO");
 
     // Wait for AGREE
+    // Long timeout since peers may connect at very different times
     let agree_data = tokio::time::timeout(
-        std::time::Duration::from_secs(30),
+        std::time::Duration::from_secs(300),
         incoming_rx.recv(),
     )
     .await
-    .map_err(|_| anyhow::anyhow!("handshake timeout: no AGREE received within 30s"))?
+    .map_err(|_| anyhow::anyhow!("handshake timeout: no AGREE received within 5 minutes"))?
     .ok_or_else(|| anyhow::anyhow!("data channel closed before handshake"))?;
     let agree_tunnel = TunnelMessage::decode(agree_data)?;
     if agree_tunnel.msg_type != MessageType::Agree {
@@ -85,8 +86,24 @@ pub async fn run_proxy(
     info!("received AGREE: {:?}", agree);
     tunnel_ready.store(true, Ordering::SeqCst);
 
+    // Keepalive: send ping every 10 seconds
+    let dc_ping = dc.clone();
+    let ping_task = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(10));
+        loop {
+            interval.tick().await;
+            let ping_msg = TunnelMessage::ping();
+            if dc_ping.send(&Bytes::from(ping_msg.encode().to_vec())).await.is_err() {
+                debug!("ping send failed, channel likely closed");
+                break;
+            }
+            debug!("sent keepalive ping");
+        }
+    });
+
     // Spawn response reader task — routes incoming tunnel messages to per-stream channels
     let pending_clone = pending.clone();
+    let dc_for_pong = dc.clone();
     tokio::spawn(async move {
         while let Some(raw) = incoming_rx.recv().await {
             let msg = match TunnelMessage::decode(raw) {
@@ -132,6 +149,18 @@ pub async fn run_proxy(
                     if let Some(tx) = pending_guard.remove(&msg.stream_id) {
                         let _ = tx.send(StreamEvent::Error(err_msg));
                     }
+                }
+                MessageType::Ping => {
+                    // Respond with pong
+                    let pong_msg = TunnelMessage::pong();
+                    if let Err(e) = dc_for_pong.send(&Bytes::from(pong_msg.encode().to_vec())).await {
+                        warn!("failed to send pong: {}", e);
+                    } else {
+                        debug!("received ping, sent pong");
+                    }
+                }
+                MessageType::Pong => {
+                    debug!("received pong");
                 }
                 other => {
                     debug!("proxy ignoring message type {:?}", other);

@@ -32,12 +32,13 @@ pub async fn run_serve(
     info!("data channel ready, performing handshake...");
 
     // Wait for HELLO from consumer (with timeout)
+    // Long timeout since peers may connect at very different times
     let hello_msg = tokio::time::timeout(
-        std::time::Duration::from_secs(30),
+        std::time::Duration::from_secs(300),
         incoming_rx.recv(),
     )
     .await
-    .map_err(|_| anyhow::anyhow!("handshake timeout: no HELLO received within 30s"))?
+    .map_err(|_| anyhow::anyhow!("handshake timeout: no HELLO received within 5 minutes"))?
     .ok_or_else(|| anyhow::anyhow!("data channel closed before handshake"))?;
 
     let hello_tunnel = TunnelMessage::decode(hello_msg)?;
@@ -61,6 +62,21 @@ pub async fn run_serve(
 
     // Track partial request bodies
     let mut pending_requests: HashMap<u32, (RequestHeaders, Vec<u8>)> = HashMap::new();
+
+    // Keepalive: send ping every 10 seconds
+    let dc_ping = dc.clone();
+    let ping_task = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(10));
+        loop {
+            interval.tick().await;
+            let ping_msg = TunnelMessage::ping();
+            if dc_ping.send(&Bytes::from(ping_msg.encode().to_vec())).await.is_err() {
+                debug!("ping send failed, channel likely closed");
+                break;
+            }
+            debug!("sent keepalive ping");
+        }
+    });
 
     while let Some(raw) = incoming_rx.recv().await {
         let msg = match TunnelMessage::decode(raw) {
@@ -100,12 +116,25 @@ pub async fn run_serve(
                     });
                 }
             }
+            MessageType::Ping => {
+                // Respond with pong
+                let pong_msg = TunnelMessage::pong();
+                if let Err(e) = dc.send(&Bytes::from(pong_msg.encode().to_vec())).await {
+                    warn!("failed to send pong: {}", e);
+                } else {
+                    debug!("received ping, sent pong");
+                }
+            }
+            MessageType::Pong => {
+                debug!("received pong");
+            }
             other => {
                 debug!("serve ignoring message type {:?}", other);
             }
         }
     }
 
+    ping_task.abort();
     info!("data channel closed, serve ending");
     Ok(())
 }

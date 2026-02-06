@@ -1,12 +1,15 @@
 #!/bin/bash
-# Local end-to-end test for the P2P HTTP tunnel
-# This script starts all components and tests the tunnel locally.
+# Test the tunnel with a LOCAL signal server (for offline/development testing)
+# 
+# This test runs everything locally including the signal server.
+# Use test-tunnel.sh for testing with the public signal server.
 #
 # Prerequisites:
-#   - Node.js installed
-#   - Rust/cargo installed
-#   - signal-server dependencies installed (cd signal-server && npm install)
-#   - tunnel built (cd tunnel && cargo build)
+#   - signal-server built: cd signal-server && npm install && npm run build
+#   - tunnel built: cd tunnel && cargo build --release
+#
+# Usage:
+#   ./scripts/test-local.sh
 
 set -e
 
@@ -26,8 +29,9 @@ cleanup() {
 trap cleanup EXIT
 
 echo -e "${COLOR_GREEN}=== P2P HTTP Tunnel Local Test ===${COLOR_RESET}"
+echo "Using LOCAL signal server (ws://127.0.0.1:8787)"
 
-# 1. Start a simple upstream HTTP server (simulates an API)
+# 1. Start a simple upstream HTTP server
 echo -e "\n${COLOR_GREEN}[1/5] Starting upstream HTTP server on :3001...${COLOR_RESET}"
 python3 -c '
 import http.server
@@ -53,7 +57,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(b"not found")
     def log_message(self, format, *args):
-        pass  # Suppress logs
+        pass
 
 with socketserver.TCPServer(("", 3001), Handler) as httpd:
     httpd.serve_forever()
@@ -61,7 +65,6 @@ with socketserver.TCPServer(("", 3001), Handler) as httpd:
 UPSTREAM_PID=$!
 sleep 1
 
-# Verify upstream is running
 if curl -s http://127.0.0.1:3001/health > /dev/null 2>&1; then
     echo -e "  ${COLOR_GREEN}✓ Upstream server running${COLOR_RESET}"
 else
@@ -71,32 +74,31 @@ fi
 
 # 2. Start signaling server
 echo -e "\n${COLOR_GREEN}[2/5] Starting signaling server on :8787...${COLOR_RESET}"
-(cd signal-server && node dist/index.js --port 8787) &
+(cd signal-server && node dist/index.js --port 8787) > /tmp/signal.log 2>&1 &
 SIGNAL_PID=$!
 sleep 1
 echo -e "  ${COLOR_GREEN}✓ Signaling server running${COLOR_RESET}"
 
 # 3. Start tunnel serve (provider)
 echo -e "\n${COLOR_GREEN}[3/5] Starting tunnel serve...${COLOR_RESET}"
-RUST_LOG=info ./tunnel/target/debug/tunnel serve \
+RUST_LOG=info ./tunnel/target/release/tunnel serve \
     --signal ws://127.0.0.1:8787 \
     --room test-room \
-    --upstream http://127.0.0.1:3001 &
+    --upstream http://127.0.0.1:3001 > /tmp/serve.log 2>&1 &
 SERVE_PID=$!
 sleep 2
 echo -e "  ${COLOR_GREEN}✓ Tunnel serve started${COLOR_RESET}"
 
 # 4. Start tunnel proxy (consumer)
 echo -e "\n${COLOR_GREEN}[4/5] Starting tunnel proxy on :8000...${COLOR_RESET}"
-RUST_LOG=info ./tunnel/target/debug/tunnel proxy \
+RUST_LOG=info ./tunnel/target/release/tunnel proxy \
     --signal ws://127.0.0.1:8787 \
     --room test-room \
-    --listen 127.0.0.1:8000 &
+    --listen 127.0.0.1:8000 > /tmp/proxy.log 2>&1 &
 PROXY_PID=$!
 
-# Wait for WebRTC connection + handshake
 echo -e "  Waiting for tunnel to establish..."
-sleep 8
+sleep 5
 echo -e "  ${COLOR_GREEN}✓ Tunnel proxy started${COLOR_RESET}"
 
 # 5. Test the tunnel
@@ -107,10 +109,13 @@ RESPONSE=$(curl -s http://127.0.0.1:8000/v1/models 2>&1)
 echo -e "  Response: $RESPONSE"
 
 if echo "$RESPONSE" | grep -q 'test-model'; then
-    echo -e "\n${COLOR_GREEN}✓ SUCCESS! Request tunneled through WebRTC and reached upstream.${COLOR_RESET}"
+    echo -e "\n${COLOR_GREEN}✓ SUCCESS! Request tunneled correctly.${COLOR_RESET}"
 else
-    echo -e "\n${COLOR_RED}✗ FAILED: Expected response containing 'test-model'${COLOR_RESET}"
-    echo -e "  Got: $RESPONSE"
+    echo -e "\n${COLOR_RED}✗ FAILED: Expected 'test-model' in response${COLOR_RESET}"
+    echo "--- serve.log ---"
+    tail -20 /tmp/serve.log
+    echo "--- proxy.log ---"
+    tail -20 /tmp/proxy.log
     exit 1
 fi
 

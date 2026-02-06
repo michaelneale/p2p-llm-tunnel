@@ -88,6 +88,8 @@ impl Agree {
 pub enum MessageType {
     Hello = 1,
     Agree = 2,
+    Ping = 3,
+    Pong = 4,
     ReqHeaders = 10,
     ReqBody = 11,
     ReqEnd = 12,
@@ -102,6 +104,8 @@ impl MessageType {
         match v {
             1 => Some(Self::Hello),
             2 => Some(Self::Agree),
+            3 => Some(Self::Ping),
+            4 => Some(Self::Pong),
             10 => Some(Self::ReqHeaders),
             11 => Some(Self::ReqBody),
             12 => Some(Self::ReqEnd),
@@ -238,6 +242,22 @@ impl TunnelMessage {
             msg_type: MessageType::Error,
             stream_id,
             payload: Bytes::from(msg.to_string()),
+        }
+    }
+
+    pub fn ping() -> Self {
+        TunnelMessage {
+            msg_type: MessageType::Ping,
+            stream_id: 0,
+            payload: Bytes::new(),
+        }
+    }
+
+    pub fn pong() -> Self {
+        TunnelMessage {
+            msg_type: MessageType::Pong,
+            stream_id: 0,
+            payload: Bytes::new(),
         }
     }
 }
