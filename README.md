@@ -2,21 +2,29 @@
 
 Expose any HTTP service (like a local LLM) through a peer-to-peer WebRTC tunnel. No port forwarding, no static IP needed.
 
-## Quick Start
+## Install
 
 ```bash
-# Build (requires Rust 1.70+)
+# macOS (Apple Silicon)
+curl -L https://github.com/michaelneale/p2p-llm-tunnel/releases/latest/download/tunnel-darwin-arm64.gz | gunzip > tunnel
+chmod +x tunnel
+```
+
+Or build from source (requires Rust 1.70+):
+```bash
 cd tunnel && cargo build --release
 ```
 
+## Quick Start
+
 **On the machine with your API** (e.g., home server running Ollama):
 ```bash
-./tunnel serve --room my-secret-room --upstream http://127.0.0.1:11434
+tunnel serve --room my-secret-room --upstream http://127.0.0.1:11434
 ```
 
 **On your laptop/remote machine:**
 ```bash
-./tunnel proxy --room my-secret-room --listen 127.0.0.1:8000
+tunnel proxy --room my-secret-room --listen 127.0.0.1:8000
 ```
 
 **Use it:**
