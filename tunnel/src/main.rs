@@ -11,8 +11,9 @@ use tracing_subscriber::EnvFilter;
 
 use cli::TurnConfig;
 
-const MAX_RETRIES: u32 = 5;
+const MAX_RETRIES: u32 = u32::MAX; // Retry forever
 const INITIAL_BACKOFF_SECS: u64 = 2;
+const MAX_BACKOFF_SECS: u64 = 60; // Cap backoff at 60 seconds
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -130,10 +131,10 @@ where
                     return Err(e);
                 }
 
-                let backoff = INITIAL_BACKOFF_SECS * 2u64.pow(attempt - 1);
+                let backoff = (INITIAL_BACKOFF_SECS * 2u64.pow(attempt.min(10) - 1)).min(MAX_BACKOFF_SECS);
                 warn!(
-                    "{} failed (attempt {}/{}): {}. Retrying in {}s...",
-                    mode, attempt, max_retries, e, backoff
+                    "{} failed (attempt {}): {}. Retrying in {}s...",
+                    mode, attempt, e, backoff
                 );
 
                 // Use tokio::select to allow Ctrl+C to interrupt the backoff sleep
